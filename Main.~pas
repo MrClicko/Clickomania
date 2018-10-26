@@ -1,0 +1,914 @@
+unit Main;
+
+interface
+
+uses
+  Windows, Messages, SysUtils, Classes, Graphics, Controls, Forms, Dialogs,
+  ExtCtrls, Buttons, ActnList, StdCtrls, SysInfo,
+  FileCtrl, ImgList, jpeg, PicPanel, Menus, StoneStat,
+  hh, LangSupp, DdeMan;
+
+var
+  IsSmallWin  : Boolean;
+
+type
+  TfrmMain = class(TForm)
+    panelBttns: TPicPanel;
+    bttNew: TSpeedButton;
+    alMain: TActionList;
+    actNewGame: TAction;
+    bttUndo: TSpeedButton;
+    actUndo: TAction;
+    actRestart: TAction;
+    bttHelp: TSpeedButton;
+    actSaveGame: TAction;
+    actLoadGame: TAction;
+    bttShowScores: TSpeedButton;
+    actShowScores: TAction;
+    actUpdateGameList: TAction;
+    SysComp: TSysComp;
+    panelBottom: TPicPanel;
+    panelBack: TPicPanel;
+    panelMain: TPicPanel;
+    spOutline: TShape;
+    popSelectGame: TPopupMenu;
+    bttSelect: TSpeedButton;
+    bttConfig: TSpeedButton;
+    actSelectGame: TAction;
+    actConfig: TAction;
+    actAbout: TAction;
+    bttAbout: TSpeedButton;
+    actHelp: TAction;
+    lblPoints: TLabel;
+    timerPoints: TTimer;
+    panelTop: TPicPanel;
+    bttQuit: TSpeedButton;
+    acQuit: TAction;
+    lblClickomaniaTitel: TLabel;
+    acHide: TAction;
+    acCreateLink: TAction;
+    ddeServer: TDdeServerConv;
+    ddeServerItem: TDdeServerItem;
+    actLangSearch: TAction;
+    procedure FormCreate(Sender: TObject);
+    procedure SetWindowType;
+    procedure actNewGameExecute(Sender: TObject);
+    procedure actUndoExecute(Sender: TObject);
+    procedure actRestartExecute(Sender: TObject);
+    procedure actSaveGameExecute(Sender: TObject);
+    procedure actLoadGameExecute(Sender: TObject);
+    procedure ChangeGame(Sender: TObject);
+    procedure FormDestroy(Sender: TObject);
+    procedure actShowScoresExecute(Sender: TObject);
+    procedure FormClose(Sender: TObject; var Action: TCloseAction);
+    procedure actUpdateGameListExecute(Sender: TObject);
+    procedure FormCloseQuery(Sender: TObject; var CanClose: Boolean);
+    procedure actSelectGameExecute(Sender: TObject);
+    procedure actAboutExecute(Sender: TObject);
+    procedure actConfigExecute(Sender: TObject);
+    procedure actHelpExecute(Sender: TObject);
+    procedure ShowNewScore(Sender: TObject);
+    procedure panelTopMouseMove(Sender: TObject; Shift: TShiftState; X,
+      Y: Integer);
+    procedure acQuitExecute(Sender: TObject);
+    procedure panelTopMouseDown(Sender: TObject; Button: TMouseButton;
+      Shift: TShiftState; X, Y: Integer);
+    procedure acHideExecute(Sender: TObject);
+    procedure OnRestore(Sender: TObject);
+    procedure CreateLinkToMyself(Sender: TObject);
+    procedure ChangeBackTile(Sender: TObject);
+    procedure ddeServerExecuteMacro(Sender: TObject; Msg: TStrings);
+    procedure actLangSearchExecute(Sender: TObject);
+    {procedure ddeServerExecuteMacro(Sender: TObject; Msg: TStrings);}
+  private
+    //procedure GameOver;
+    activeGame : String;
+    procedure ReadGameType;
+    function AskIfItsOKtoEndGame: Boolean;
+    procedure GameOver(Sender: TObject);
+    procedure Gewonnen(Sender: TObject);
+    procedure NoLuck(Sender: TObject);
+    procedure Gezogen(Sender: TObject);
+    procedure ZugStart(Sender: TObject);
+    procedure Anigestartet(Sender: TObject);
+    procedure Spielgestartet(Sender: TObject);
+    procedure CheckForUserImages;
+    procedure UpdateStats;
+    procedure ProcScores(Finished: Boolean);
+    procedure LoadJPEGfromRes(JPEG: String; Bitmap: TBitmap);
+    procedure MarkCurrentGame;
+    procedure StStatCreate;
+  public
+     WebScoreURL : String;
+     UserEMail   : String;
+     GameName    : String;
+     procedure FindGames;
+     procedure ShowPopupText(Text : String);
+     procedure NewGame;
+     procedure ProcessBackTiles;
+     procedure ProcToolTipInfo;
+     procedure SetLanguages;
+  end;
+
+var
+  frmMain   : TfrmMain;
+  BGColor   : TColor;
+  FontColor : TColor;
+  IsAnimating : Boolean;
+  ClickPos  : TPoint;
+  Hidden    : Boolean;
+  SavePath  : String;
+  BTIndex   : Integer;
+  LS        : TLangSupport;
+  ShowToolTip: Boolean;
+  NoTiledGameBack : Boolean;
+
+const
+   {$IFDEF AlternativeScoreWrite}
+   WriteWebscore = 'WritescoreDEBUG.php';
+   {$ELSE}
+   WriteWebscore = 'Writescore.php';
+   {$ENDIF}
+   Showscore     = 'Showscore.php';
+   WriteWSComd   = 'Score';
+   WriteIDCmd    = 'GameID';
+   WriteGameCfg  = 'GameCfg';
+   WriteChecksum = 'GameStat';
+   ShowWSStat    = 'Status';
+   WriteBonus    = 'Bonus';
+   VersionsID    = 1;
+   TBID          = 'TILEBACK';
+   HelpFileEng   = 'ClickNG.chm';
+   DefaultLang   = 'english';
+   DefaultBackCol= $00C56A31;
+
+implementation
+
+uses Stein, Spielfeld, GameType, GameLog, Scores, PopupText, Config, About,
+  UserName;
+
+var Feld         : TSpielfeld;
+    Game         : TGameType;
+    StStat       : TStoneStat;
+    BackTile     : TBitmap;
+    DDEInfo      : String;
+    Status       : String;
+
+{$R *.DFM}
+{$R Main.res}
+
+procedure TfrmMain.NewGame;
+begin
+Game := TGameType.Create(self, ActiveGame, SavePath);
+Feld := TSpielfeld.Create(self);
+Feld.Parent := panelMain;
+Feld.Name := 'Spielfeld';
+Feld.Left := 0;
+Feld.Top  := 0;
+Feld.OnGameIsOver := GameOver;
+Feld.OnWon        := Gewonnen;
+Feld.OnNoMovePossible := NoLuck;
+Feld.OnMoveStart  := Zugstart;
+Feld.OnMoveDone   := Gezogen;
+Feld.OnAnimationStarted := Anigestartet;
+Feld.OnGameStarted := Spielgestartet;
+ReadGameType;
+CheckForUserImages;
+SetWindowType;
+Game.PlaySound(stStart);
+Feld.Fill;
+StStatCreate;
+if not NoTiledGameBack then
+   if (Feld.Background.Empty) then Feld.Background.Assign(panelMain.Background);
+Status := 'GameInProgress';
+end;
+
+procedure TfrmMain.StStatCreate;
+begin
+StStat := TStoneStat.Create(panelBottom,Feld, Game);
+StStat.Parent := panelBottom;
+StStat.Left := lblPoints.Left + lblPoints.Width+20;
+StStat.Top  := 10;
+StStat.Width := 50;
+StStat.OnDblClick := ChangeBackTile;
+StStat.Width := panelBottom.Width - lblPoints.Width - lblPoints.Left;
+end;
+
+procedure TfrmMain.ReadGameType;
+begin
+Game.UserName     := sysComp.ReadRegStr('', 'Last User',sysComp.UserName);
+Game.UserMail     := sysComp.ReadRegStr('', 'Last User (Mail)', '');
+GameName          := Game.GameName;
+Feld.Columns      := Game.Columns;
+Feld.Rows         := Game.Rows;
+Feld.NrOfColors   := Game.NrOfColors;
+Feld.Steinhoehe   := Game.Steinhoehe;
+Feld.Steinbreite  := Game.Steinbreite;
+Feld.BallsList    := Game.BallsList;
+Feld.Width        := Game.Columns *Game.Steinbreite;
+Feld.Height       := Game.Rows *Game.Steinhoehe;
+if not (Game.BgColor = clNone) then begin
+   Feld.BgColor   := Game.BgColor;
+   panelMain.Color:= Game.BgColor;
+end else begin
+   panelMain.Color:= DefaultBackCol;
+   Feld.BgColor   := DefaultBackCol;
+   end;
+Feld.Background   := Game.Background;
+Feld.DrawType     := Game.DrawType;
+Feld.Animations   := Game.Animations;
+Feld.ActionStones := Game.ActionStones;
+WebScoreURL       := Game.WebScoreURL;
+Game.PlaySounds   := SysComp.ReadRegBool('','Klänge abspielen', true);
+Game.LangHandle   := LS.LangResHandle;
+end;
+
+procedure TfrmMain.FindGames;
+var SR  : TSearchRec;
+    Str : String;
+    Menu: TMenuItem;
+begin
+popSelectGame.Items.Clear;
+Menu := TMenuItem.Create(Self);
+Menu.Caption := 'default';
+Menu.OnClick := ChangeGame;
+popSelectGame.Items.Add(Menu);
+ActiveGame := sysComp.ReadRegStr('Games','Letzter Spieltyp', PrimeGame);
+if FindFirst(SavePath+'*.cng', faAnyFile, sr) = 0 then begin
+   repeat
+   Str := SR.Name;
+   Str := Copy(Str,1,Pos('.',Str)-1);
+   Menu := TMenuItem.Create(Self);
+   Menu.Caption := Str;
+   Menu.OnClick := ChangeGame;
+   Menu.Hint    := 'Hallo';
+   popSelectGame.Items.Add(Menu);
+   until FindNext(sr) <> 0;
+   findClose(sr);
+   end;
+MarkCurrentGame;
+end;
+
+procedure TfrmMain.actUpdateGameListExecute(Sender: TObject);
+begin
+FindGames;
+end;
+
+procedure TfrmMain.FormCreate(Sender: TObject);
+var tStr : String;
+begin
+IsAnimating := true;
+SavePath     := sysComp.ReadRegStr('', 'Savepath', ExcludeTrailingBackslash(ExtractFilePath(Application.ExeName)));
+ShowToolTip  := sysComp.ReadRegBool('', 'Tooltip zeigen', true);
+NoTiledGameBack := sysComp.ReadRegBool('', 'No Tiled Game Back', false);
+ProcToolTipInfo;
+if not (SavePath[Length(SavePath)] = '\') then SavePath := SavePath + '\';
+IsSmallWin   := syscomp.ReadRegBool('','Kleines Fenster verwenden', false);
+self.Left    := syscomp.ReadRegInt('','Links',10);
+self.Top     := syscomp.ReadRegInt('','Oben',10);
+self.Visible := true;
+BTIndex      := sysComp.ReadRegInt('', 'Backtile-Index',1);
+BGColor      := $00C56A31;
+FontColor    := clWhite;
+panelBttns.Color         := BGColor;
+panelBottom.Color        := BGColor;
+frmMain.Color            := BGColor;
+panelTop.Color           := BGColor;
+bttSelect.Font.Color     := FontColor;
+bttNew.Font.Color        := FontColor;
+bttUndo.Font.Color       := FontColor;
+bttShowScores.Font.Color := FontColor;
+bttConfig.Font.Color     := FontColor;
+bttHelp.Font.Color       := FontColor;
+bttAbout.Font.Color      := FontColor;
+bttSelect.Caption        := '';
+bttNew.Caption           := '';
+bttUndo.Caption          := '';
+bttShowScores.Caption    := '';
+bttConfig.Caption        := '';
+bttHelp.Caption          := '';
+bttAbout.Caption         := '';
+bttQuit.Caption          := '';
+HelpFile                 := HelpFileEng;
+LS := TLangSupport.Create(self);
+LS.SavePath              := SavePath;
+if (syscomp.ReadRegInt('', 'Version', -1) = -1) then begin
+   syscomp.SaveRegInt('', 'Version', VersionsID);
+   actLangSearchExecute(nil);
+   CreateLinkToMyself(nil);
+   sysComp.SaveRegStr('Game Designer','WoDumichfindest',Application.ExeName);
+   end;
+tStr := SysComp.ReadRegStr('', 'Programmsprache', '');
+if not (tStr = '') then LS.setLanguage(tSTr);
+LS.ProcStrings(self.Name);
+bttSelect.Glyph.LoadFromResourceName(hInstance,  'ICOSELECT');
+bttNew.Glyph.LoadFromResourceName(hInstance,  'ICONEW');
+bttUndo.Glyph.LoadFromResourceName(hInstance,  'ICOUNDO');
+bttShowScores.Glyph.LoadFromResourceName(hInstance, 'ICOSCORE');
+bttConfig.Glyph.LoadFromResourceName(hInstance,  'ICOCFG');
+bttHelp.Glyph.LoadFromResourceName(hInstance,  'ICOHELP');
+bttAbout.Glyph.LoadFromResourceName(hInstance,  'ICOABOUT');
+bttQuit.Glyph.LoadFromResourceName(hInstance,  'ICOQUIT');
+FindGames;
+ProcessBackTiles;
+NewGame;
+ProcessBackTiles; {Muss zweimal ausgeführt werden, sonst bleibt das Fenster weiss}
+// Hier den Hintergrund einblenden, falls kein Hintergrund vorhanden ist!
+Self.Update;
+UpdateStats;
+Application.OnRestore := OnRestore;
+end;
+
+procedure TfrmMain.LoadJPEGfromRes(JPEG: String; Bitmap: TBitmap);
+var JPGImg : TJPEGImage;
+    JPGStream: TResourceStream;
+begin
+JPGImg:= TJPEGImage.Create;
+JPGStream:= TResourceStream.Create(hInstance, PChar(JPEG), RT_RCDATA);
+JPGImg.LoadFromStream(JPGStream);
+Bitmap.Assign(JPGImg);
+JPGImg.Free;
+JPGStream.Free;
+end;
+
+procedure TfrmMain.SetWindowType;
+begin
+panelBttns.Top  := 0;
+panelBttns.Left := 0;
+panelMain.Width      := Feld.Width;
+panelMain.Height     := Feld.Height;
+if IsSmallWin then begin
+   frmMain.BorderStyle := bsSingle;
+   panelBttns.Align  := alNone;
+   panelBttns.Height := 35;
+   panelBttns.Align  := alTop;
+   bttSelect.Left    := 4;
+   bttSelect.Top     := 4;
+   bttNew.Left       := 32;
+   bttNew.Top        := 4;
+   bttUndo.Left      := 60;
+   bttUndo.Top       := 4;
+   bttShowScores.Left:= 88;
+   bttShowScores.Top := 4;
+   bttConfig.Left    := 116;
+   bttConfig.Top     := 4;
+   bttHelp.Left      := 144;
+   bttHelp.Top       := 4;
+   bttAbout.Left     := 172;
+   bttAbout.Top      := 4;
+   bttQuit.Visible   := false;
+   bttQuit.Left      := 0;
+   bttQuit.Top       := 0;
+   panelTop.Visible     := false;
+   panelBttns.Visible   := true;
+   panelBottom.Visible  := false;
+   frmMain.ClientWidth  := Feld.Width;
+   frmMain.ClientHeight := Feld.Height + panelBttns.height+2;
+   panelMain.Align      := alNone;
+   panelMain.Left       := 1;
+   panelMain.Top        := 1;
+   panelMain.Width      := frmMain.ClientWidth -2;
+   panelMain.Height     := feld.Height;
+   spOutline.Left       := 0;
+   spOutline.Top        := 0;
+   spOutline.width      := frmMain.ClientWidth;
+   spOutline.Height     := panelMain.Height+2;
+end else begin
+   frmMain.BorderStyle := bsNone;
+   panelBttns.Width  := 40;
+   panelBttns.Align  := alLeft;
+   bttSelect.Left    := 4;
+   bttSelect.Top     := 8;
+   bttNew.Left       := 4;
+   bttNew.Top        := 36;
+   bttUndo.Left      := 4;
+   bttUndo.Top       := 64;
+   bttShowScores.Left:= 4;
+   bttShowScores.Top := 92;
+   bttConfig.Left    := 4;
+   bttConfig.Top     := 120;
+   bttHelp.Left      := 4;
+   bttHelp.Top       := 148;
+   if feld.Height < 232 then begin
+      bttAbout.Visible:= false;
+      bttQuit.Visible:= true;
+      bttQuit.Left   := 4;
+      bttQuit.Top    := 176;
+   end else begin
+      bttAbout.Visible:= true;
+      bttAbout.Left  := 4;
+      bttAbout.Top   := 176;
+      bttQuit.Visible:= true;
+      bttQuit.Left   := 4;
+      bttQuit.Top    := 204;
+      end;
+   panelMain.Align   := alNone;
+   panelMain.Left    := 10;
+   panelMain.Top     := 1;
+   panelTop.Visible     := true;
+   panelBttns.Visible   := true;
+   panelBottom.Visible  := true;
+   frmMain.ClientWidth  := panelBttns.Width + Feld.Width + 1+20;
+   frmMain.ClientHeight := Feld.Height+1+10 + panelTop.Height + panelBottom.height;
+   spOutline.Left       := panelMain.Left-1;
+   spOutline.Top        := panelMain.Top-1;
+   spOutline.width      := panelMain.Width+2;
+   spOutline.Height     := panelMain.Height+2;
+   end;
+spOutline.Visible    := true;
+panelMain.visible    := true;
+end;
+
+procedure TfrmMain.CreateLinkToMyself(Sender: TObject);
+var Desktop : String;
+begin
+Desktop := SysComp.getSpecialFolder(CSIDL_COMMON_DESKTOPDIRECTORY);
+if (Desktop = '')
+   then Desktop := SysComp.getSpecialFolder(CSIDL_DESKTOP);
+if (Desktop = '')
+   then Desktop := 'c:\windows\desktop';
+sysComp.CreateLnk(Application.ExeName, '', LS.LoadStr(50), LS.LoadStr(51), Desktop);
+end;
+
+procedure TfrmMain.FormCloseQuery(Sender: TObject; var CanClose: Boolean);
+begin
+CanClose := true;
+if (Feld = nil) then Exit;
+if Feld.CanUndo then begin
+   CanClose := AskIfItsOKtoEndGame;
+   if CanClose then ProcScores(false);
+   end;
+end;
+
+procedure TfrmMain.FormClose(Sender: TObject; var Action: TCloseAction);
+begin
+{if not (frmScores = nil) then frmScores.Free;
+Application.Terminate;}
+HH.HtmlHelp(0, nil, HH_CLOSE_ALL, 0);
+end;
+
+procedure TfrmMain.FormDestroy(Sender: TObject);
+begin
+//Feld.CurrentLog.Save;
+Backtile.Free;
+syscomp.SaveRegInt('','Links',Self.Left);
+syscomp.SaveRegInt('','Oben',Self.Top);
+syscomp.SaveRegStr('Games','Letzter Spieltyp', ActiveGame);
+end;
+
+procedure TfrmMain.actNewGameExecute(Sender: TObject);
+begin
+if IsAnimating then Exit;
+if Feld.CanUndo then begin
+   if not AskIfItsOKtoEndGame then Exit;
+   ProcScores(false);
+   end;
+StStat.Free;
+Feld.Free;
+NewGame;
+end;
+
+procedure TfrmMain.actUndoExecute(Sender: TObject);
+begin
+if (GetAsyncKeyState(VK_SHIFT)) < 0 then begin
+   Game.PlaySound(stRestart);
+   Feld.DoRestart;
+end else begin
+   Game.PlaySound(stUndo);
+   Feld.DoUndo;
+   end;
+end;
+
+procedure TfrmMain.actRestartExecute(Sender: TObject);
+begin
+Game.PlaySound(stRestart);
+Feld.DoRestart;
+end;
+
+procedure TfrmMain.GameOver(Sender: TObject);
+begin
+UpdateStats;
+Game.PlaySound(stOver);
+ShowPopupText(LS.LoadStr(70));
+ProcScores(true);
+Status := 'GameOver';
+end;
+
+procedure TfrmMain.Gewonnen(Sender: TObject);
+begin
+UpdateStats;
+Game.PlaySound(stWon);
+ShowPopupText(LS.LoadStr(71));
+ProcScores(true);
+Status := 'GameWon';
+end;
+
+procedure TfrmMain.NoLuck(Sender: TObject);
+begin
+Game.PlaySound(stNoMove);
+ShowPopupText(LS.LoadStr(72));
+end;
+
+function TfrmMain.AskIfItsOKtoEndGame: Boolean;
+begin
+Result := (MessageDlg(LS.LoadStr(73), mtConfirmation, [mbYes, mbNo], 0) = mrYes);
+//Result := Application.MessageBox(Pchar(), PChar(LS.LoadStr(74)), MB_YESNO) = IdYes;
+end;
+
+procedure TfrmMain.UpdateStats;
+begin
+// Statusanzeigen etc.
+actUndo.Enabled := Feld.CanUndo;
+actRestart.Enabled := Feld.CanUndo;
+ShowNewScore(nil);
+StStat.ShowStoneStats;
+end;
+
+procedure TfrmMain.ZugStart(Sender: TObject);
+begin
+Game.PlaySound(stMove);
+end;
+
+procedure TfrmMain.Gezogen(Sender: TObject);
+begin
+UpdateStats;
+end;
+
+procedure TfrmMain.actSaveGameExecute(Sender: TObject);
+begin
+{$IFDEF WithSaveFeature}
+Game.SaveGameToFile;
+{$ENDIF}
+end;
+
+procedure TfrmMain.actLoadGameExecute(Sender: TObject);
+begin
+{$IFDEF WithSaveFeature}
+GAme.LoadGameFromFile;
+{$ENDIF}
+end;
+
+procedure TfrmMain.CheckForUserImages;
+var Str : String;
+    SR  : TSearchRec;
+    FL  : TStringList;
+    Ind : Integer;
+begin
+{Userback: Hier kann der Standard-Hintergrund mit einem benutzerdefinierten
+Hintergrund überschrieben werden.}
+Str := SavePath;
+Str := Str+'\'+ActiveGame;
+if not DirectoryExists(Str) then begin
+   Str := Str+'.lnk';
+   Str := sysComp.Dereference(str);
+   end;
+FL := TStringList.Create;
+//Str := ExcludeTrailingBackslash(sysComp.ReadRegStr('','User-Bilder','E:\Infos\'));
+Ind := sysComp.ReadRegInt(ExtractFileName(Str),'User-Bilder-Index',0);
+Inc(Ind);
+if DirectoryExists(Str) then begin
+   if FindFirst(Str+'\*.jpg', faAnyFile, sr) = 0 then begin
+      repeat
+      FL.Add(sr.Name);
+      until FindNext(sr) <> 0;
+      findClose(sr);
+      end;
+   if FindFirst(Str+'\*.jpeg', faAnyFile, sr) = 0 then begin
+      repeat
+      FL.Add(sr.Name);
+      until FindNext(sr) <> 0;
+      findClose(sr);
+      end;
+   if FindFirst(Str+'\*.bmp', faAnyFile, sr) = 0 then begin
+      repeat
+      FL.Add(sr.Name);
+      until FindNext(sr) <> 0;
+      findClose(sr);
+      end;
+   if FL.Count > 0 then begin
+      If (Ind > FL.Count) then Ind := 1;
+      sysComp.SaveRegInt(ExtractFileName(Str),'User-Bilder-Index', Ind);
+      Game.UseThisBack := Str+'\'+FL[Ind-1];
+      Feld.DrawType := dtHideBack;
+      Feld.Rows := Game.Rows;
+      Feld.Columns := Game.Columns;
+      end;
+   end;
+FL.Free;
+end;
+
+procedure TfrmMain.ProcScores(Finished: Boolean);
+var NewOnPos : Integer;
+begin
+NewOnPos := Game.SaveScores(Feld.Points, Feld.StonesLeft, Feld.Time, Feld.CountMoves, Feld.BestMove, Finished);
+sysComp.SaveRegStr('', 'Last User', Game.UserName);
+sysComp.SaveRegStr('', 'Last User (Mail)', Game.UserMail);
+if not (frmScores = nil) then frmScores.Update(Game, NewOnPos);
+end;
+
+procedure TfrmMain.actShowScoresExecute(Sender: TObject);
+begin
+if (frmScores = nil)
+   then Application.CreateForm(TfrmScores, frmScores);
+frmScores.Update(Game,-2);
+frmScores.Show;
+end;
+
+procedure TfrmMain.ShowPopupText(Text : String);
+var P : TPoint;
+    hOffset : Integer;
+    vOffset : Integer;
+begin
+if frmPopupText = nil
+   then Application.CreateForm(TfrmPopupText, frmPopupText);
+with frmPopupText do begin
+   lblText.Caption := Text;
+   SetSize;
+   GetCursorPos(P);
+   hOffset := P.y-Height-20;
+   vOffset := P.x - (ClientWidth div 2);
+   if hOffset < 0 then hOffset := P.y +40;
+   if vOffset < 0 then vOffset := 0;
+   if vOffset + Width > Screen.Width then vOffset := Screen.Width - Width -5;
+   Top := hOffset;
+   Left := vOffset;
+   timerClose.Enabled := true;
+   Show;
+   Self.SetFocus;
+   end;
+end;
+
+procedure TfrmMain.actSelectGameExecute(Sender: TObject);
+var PopUpPos : TPoint;
+begin
+if IsAnimating then Exit;
+PopUpPos := ClientToScreen(Point(bttSelect.Left+bttSelect.Width, bttSelect.Top+bttSelect.Height));
+popSelectGame.Popup(PopUpPos.x, PopUpPos.y);
+end;
+
+procedure TfrmMain.ChangeGame(Sender: TObject);
+var SelectedGame : String;
+begin
+if Sender = ddeServer then begin
+   SelectedGame := DDEInfo;
+   ActiveGame := '';
+end else begin
+   SelectedGame := TMenuItem(Sender).Caption;
+   end;
+if SelectedGame[1] = '&' then Delete(SelectedGame,1,1);
+if not (SelectedGame = ActiveGame) then begin
+   if Feld.CanUndo then
+      if AskIfItsOKtoEndGame then begin
+         //comboGames.ItemIndex := activeGame;
+         ProcScores(false);
+      end else begin
+         Exit;
+         end;
+   StStat.Free;
+   Feld.Free;
+   Game.Free;
+   Game := nil;
+   activeGame := SelectedGame;
+   MarkCurrentGame;
+   Game := TGameType.Create(self, ActiveGame, SavePath);
+   NewGame;
+   ReadGameType;
+   if not (frmScores = nil) then frmScores.Update(Game,-1);
+   end;
+end;
+
+procedure TfrmMain.MarkCurrentGame;
+var i : Integer;
+    tStr : String;
+begin
+for i := 0 to popSelectGame.Items.Count-1 do begin
+   tStr := popSelectGame.Items[i].Caption;
+   if tStr[1] = '&' then Delete(tStr,1,1);
+   if tStr = ActiveGame
+      then popSelectGame.Items[i].Default := true
+      else popSelectGame.Items[i].Default := false;
+   end;
+end;
+
+procedure TfrmMain.actAboutExecute(Sender: TObject);
+begin
+if (frmAbout = nil) then Application.CreateForm(TfrmAbout, frmAbout);
+frmAbout.ShowModal;
+end;
+
+procedure TfrmMain.actConfigExecute(Sender: TObject);
+begin
+if frmCfg = nil then Application.CreateForm(TfrmCfg, frmCfg);
+frmCfg.SetConfiguration(Game);
+frmCfg.ShowModal;
+ProcToolTipInfo;
+FindGames;
+SetWindowType;
+StStat.Free;
+StStatCreate;
+end;
+
+procedure TfrmMain.actHelpExecute(Sender: TObject);
+begin
+//Application.HelpContext(0);
+HtmlHelp(GetDesktopWindow, @HelpFile[1],  HH_HELP_CONTEXT, 0);
+end;
+
+procedure TfrmMain.ShowNewScore(Sender: TObject);
+var Score: TScoreList;
+begin
+if (Game = nil) or (Feld = nil) then Exit;
+Score := Game.Score;
+if Feld.GotBonus then lblPoints.Font.Color := clRed
+                 else lblPoints.Font.Color := clWhite;
+lblPoints.Caption := IntToStr(Feld.Points);
+end;
+
+procedure TfrmMain.Spielgestartet(Sender: TObject);
+begin
+actNewGame.Enabled    := true;
+actSelectGame.Enabled := true;
+actShowScores.Enabled := true;
+actAbout.Enabled      := true;
+actConfig.Enabled     := true;
+IsAnimating := false;
+end;
+
+procedure TfrmMain.Anigestartet(Sender: TObject);
+begin
+IsAnimating := true;
+actNewGame.Enabled := false;
+actSelectGame.Enabled := false;
+end;
+
+procedure TfrmMain.panelTopMouseMove(Sender: TObject; Shift: TShiftState;
+  X, Y: Integer);
+var LocPoint : TPoint;
+begin
+if not (Shift = [ssLeft]) then Exit;
+LocPoint := ClientToScreen(Point(x,y));
+frmMain.Left := LocPoint.x-ClickPos.x;
+frmMain.Top  := LocPoint.y-ClickPos.y;
+end;
+
+procedure TfrmMain.acQuitExecute(Sender: TObject);
+begin
+Application.Terminate;
+end;
+
+procedure TfrmMain.panelTopMouseDown(Sender: TObject; Button: TMouseButton;
+  Shift: TShiftState; X, Y: Integer);
+begin
+ClickPos := Point(x,y);
+end;
+
+procedure TfrmMain.acHideExecute(Sender: TObject);
+begin
+Application.Title := LS.LoadStr(80);
+Application.Icon.Handle := LoadIcon(hInstance, 'WordIcon');
+Application.Minimize;
+Hidden := true;
+end;
+
+procedure TfrmMain.OnRestore(Sender: TObject);
+begin
+if Hidden then begin
+   Application.Title := Caption;
+   Application.Icon.Handle := LoadIcon(hInstance, 'Mainicon');
+   end;
+end;
+
+procedure TfrmMain.ProcessBackTiles;
+begin
+Backtile     := TBitmap.Create;
+LoadJPEGfromRes(TBID+IntToStr(BTIndex), Backtile);
+panelTop.BackgroundTile := BackTile;
+panelTop.TileBMP;
+panelBack.BackgroundTile := BackTile;
+panelBack.TileBMP;
+panelBttns.BackgroundTile := BackTile;
+panelBttns.BackgroundBrightness := -80;
+panelBttns.TileBMP;
+panelBottom.BackgroundTile := BackTile;
+panelBottom.BackgroundBrightness := -80;
+panelBottom.TileBMP;
+if not NoTiledGameBack then begin
+   panelMain.BackgroundTile := BackTile;
+   panelMain.HeightOffset   := panelBack.Top;
+   panelMain.WidthOffset    := panelBack.Left;
+   panelMain.BackgroundBrightness := +80;
+   panelMain.TileBMP;
+   end;
+end;
+
+procedure TfrmMain.ChangeBackTile(Sender: TObject);
+begin
+if sysComp.ResourceExists(TBID+IntToStr(BTIndex+1),RT_RCDATA)
+   then BTIndex := BTIndex +1
+   else BTIndex := 1;
+ProcessBackTiles;
+sysComp.SaveRegInt('', 'Backtile-Index',BTIndex);
+panelBttns.Invalidate;
+panelBottom.Invalidate;
+panelTop.Invalidate;
+panelBack.Invalidate;
+frmMain.Update;
+StStat.RenewBack;
+Feld.Invalidate;
+//StStat.Free;
+//StStatCreate;
+end;
+
+procedure TfrmMain.ProcToolTipInfo;
+begin
+bttSelect.ShowHint      := ShowToolTip;
+bttNew.ShowHint         := ShowToolTip;
+bttUndo.ShowHint        := ShowToolTip;
+bttShowScores.ShowHint  := ShowToolTip;
+bttConfig.ShowHint      := ShowToolTip;
+bttHelp.ShowHint        := ShowToolTip;
+bttAbout.ShowHint       := ShowToolTip;
+bttQuit.ShowHint        := ShowToolTip;
+end;
+
+procedure TfrmMain.ddeServerExecuteMacro(Sender: TObject; Msg: TStrings);
+var GamePos   : Integer;
+    MovePos   : Integer;
+    SelStone  : Integer;
+    DDEbefehl : String;
+    i         : Integer;
+    Stein     : TStein;
+    List      : TStringList;
+begin
+if msg.Count > 0 then begin
+   DDEbefehl := msg.strings[0];
+   ddeServerItem.Text := Status;
+   if LowerCase(DDEbefehl) = 'hallo'
+      then MessageDlg('Someone said hallo to me.', mtInformation, [mbOK], 0);
+   GamePos := Pos('OPENGAME',DDEbefehl);
+   if (GamePos > 0) then begin
+      FindGames;
+      DDEInfo := Copy(DDEbefehl,Length('OPENGAME')+1,1000);
+      ChangeGame(ddeServer);
+      end;
+   if DDEBefehl = 'UNDOMOVE' then actUndoExecute(ddeServer);
+   if DDEBefehl = 'RESTART' then actRestartExecute(ddeServer);
+   if DDEBefehl = 'NEWGAME' then actNewGameExecute(ddeServer);
+   if DDEBefehl = 'SHOWSCORE' then actShowScoresExecute(ddeServer);
+   if DDEBefehl = 'SHOWCONFIG' then actConfigExecute(ddeServer);
+   if DDEBefehl = 'SHOWABOUT' then actAboutExecute(ddeServer);
+   if DDEBefehl = 'SHOWHELP' then actHelpExecute(ddeServer);
+   if DDEBefehl = 'GAMECONFIG' then begin
+      ddeServerItem.Text := Game.GameName+';'+IntToStr(Game.Columns)+';'+
+                            IntToStr(Game.Rows)+';'+IntToStr(Game.NrOfColors);
+      end;
+   if DDEBefehl = 'GAMESTATE' then begin
+      List := TStringList.Create;
+      for i := 0 to Feld.ControlCount-1 do begin
+         Stein := Feld.Controls[i] as TStein;
+         List.Add(IntToStr(Stein.Nummer)+';'+IntToStr(Stein.MyType)+';'+IntToStr(Stein.Left)+';'+IntToStr(Stein.Top));
+         end;
+      ddeServerItem.Lines.Assign(List);
+      List.Free;
+      end;
+   if DDEBefehl = 'POINTS' then begin
+      ddeServerItem.Text := IntToStr(feld.Points)+';'+Status;
+      end;
+   MovePos := Pos('DOMOVE',DDEbefehl);
+   if (MovePos > 0) then begin
+      SelStone := StrToInt(Copy(DDEbefehl,Length('DOMOVE')+1,1000));
+      try
+      Stein := Feld.Controls[SelStone-1] as TStein;
+      Stein.PlayMe;
+      except
+      end;
+      end;
+   ddeServer.ExecuteMacro(0);
+   end;
+end;
+
+procedure TfrmMain.actLangSearchExecute(Sender: TObject);
+var tStr : String;
+begin
+tStr := LS.FigureOutBestLangFile;
+if not (tStr = '') then SysComp.SaveRegStr('', 'Programmsprache', tStr);
+if Sender = actLangSearch then begin
+   if not (tStr = '') then LS.setLanguage(tSTr);
+   SetLanguages;
+   end;
+end;
+
+procedure TfrmMain.SetLanguages;
+begin
+LS.ProcStrings('frmMain');
+if not (frmCfg = nil) then LS.ProcStrings('frmCfg');
+if not (frmScores = nil) then begin
+   LS.ProcStrings('frmScores');
+   frmScores.Update(Game,-2);
+   end;
+if not (frmUser = nil) then LS.ProcStrings('frmUser');
+if not (frmAbout = nil) then LS.ProcStrings('frmAbout');
+end;
+
+end.
+

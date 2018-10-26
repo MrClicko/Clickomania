@@ -1,0 +1,8 @@
+// Bitmap
+
+BALL1		BITMAP LOADONCALL MOVEABLE DISCARDABLE	"Stuff\Schaltflaechen-Symbole\CicGreen.bmp"
+BALL2		BITMAP LOADONCALL MOVEABLE DISCARDABLE	"Stuff\Schaltflaechen-Symbole\CicRed.bmp"
+BALL3		BITMAP LOADONCALL MOVEABLE DISCARDABLE	"Stuff\Schaltflaechen-Symbole\CicBlue.bmp"
+BALL4		BITMAP LOADONCALL MOVEABLE DISCARDABLE	"Stuff\Schaltflaechen-Symbole\CicYellow.bmp"
+BALL5		BITMAP LOADONCALL MOVEABLE DISCARDABLE	"Stuff\Schaltflaechen-Symbole\CicPink.bmp"
+

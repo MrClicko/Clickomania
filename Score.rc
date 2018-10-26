@@ -1,0 +1,5 @@
+// Bitmap
+
+SWITCHDOWN	BITMAP LOADONCALL MOVEABLE DISCARDABLE	"Stuff\Schaltflaechen-Symbole\sb_Switch-down.bmp"
+SWITCHLEFT	BITMAP LOADONCALL MOVEABLE DISCARDABLE	"Stuff\Schaltflaechen-Symbole\sb_Switch-Left.bmp"
+//MARKER		BITMAP LOADONCALL MOVEABLE DISCARDABLE	"Stuff\Schaltflaechen-Symbole\Marker.bmp"
